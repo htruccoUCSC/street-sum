@@ -28,6 +28,7 @@ const CLASSROOM_LATLNG = leaflet.latLng(
 
 // Tunable gameplay parameters
 const GAMEPLAY_ZOOM_LEVEL = 19;
+const TILE_DEGREES = 1e-4;
 
 // Create the map (element with id "map" is defined in index.html)
 const map = leaflet.map(mapDiv, {
@@ -52,3 +53,12 @@ leaflet
 const playerMarker = leaflet.marker(CLASSROOM_LATLNG);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
+
+const origin = CLASSROOM_LATLNG;
+const bounds = leaflet.latLngBounds([[origin.lat, origin.lng], [
+  origin.lat + 1 * TILE_DEGREES,
+  origin.lng + 1 * TILE_DEGREES,
+]]);
+// Add a rectangle to the map to represent the cache
+const rect = leaflet.rectangle(bounds);
+rect.addTo(map);
