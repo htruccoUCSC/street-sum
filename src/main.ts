@@ -38,7 +38,8 @@ const NEIGHBORHOOD_SIZE_X = 35;
 const NEIGHBORHOOD_SIZE_Y = 14;
 // Token distribution tuning: skew > 1 biases toward lower-value bins (more 1s and 2s)
 const TOKEN_SKEW = 2;
-const TOKEN_SPAWN_PROBABILITY = 0.2;
+// A token is present when luck < TOKEN_SPAWN_PROBABILITY
+const TOKEN_SPAWN_PROBABILITY = 0.1;
 
 // Create the map (element with id "map" is defined in index.html)
 const map = leaflet.map(mapDiv, {
@@ -91,17 +92,31 @@ for (let i = -NEIGHBORHOOD_SIZE_Y; i <= NEIGHBORHOOD_SIZE_Y; i++) {
     const r = luck([i, j].toString());
     if (r < TOKEN_SPAWN_PROBABILITY) {
       const maxBins = 7;
-      const norm = r / 0.1;
+      const norm = r / TOKEN_SPAWN_PROBABILITY;
       // Apply a skew to bias low luck values toward lower bins. Using
       let bin = Math.floor(Math.pow(norm, TOKEN_SKEW) * maxBins);
       if (bin < 0) bin = 0;
       if (bin >= maxBins) bin = maxBins - 1;
       const tokenValue = 2 ** bin;
 
-      rect.bindTooltip(`Token: ${tokenValue}`, {
-        permanent: false,
-        direction: "top",
+      // Place a coin DivIcon marker at the center of the tile showing the
+      // token value directly on the coin. This keeps the value visible even
+      // with map noise.
+      const centerLat = origin.lat + (i + 0.5) * TILE_DEGREES;
+      const centerLng = origin.lng + (j + 0.5) * TILE_DEGREES;
+
+      const coinIcon = leaflet.divIcon({
+        className: "coin-marker",
+        html: `<div class="coin">${tokenValue}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
       });
+
+      const coinMarker = leaflet.marker([centerLat, centerLng], {
+        icon: coinIcon,
+        interactive: true,
+      });
+      coinMarker.addTo(map);
     }
   }
 }
