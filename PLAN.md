@@ -25,7 +25,7 @@ Key gameplay challenge: Can players collect and craft tokens from nearby locatio
 - [x] draw the player's location on the map
 - [x] draw a rectangle representing one cell on the map
 - [x] use loops to draw a whole grid of cells on the map
-- [ ] populate cells with tokens using a deterministic hashing mechanism
+- [x] populate cells with tokens using a deterministic hashing mechanism
 - [ ] display if cells are populated with a coin image
 - [ ] allow players to pick up tokens from cells
 - [ ] allow players to craft a new token play placing their token in a cell with a token of equal value
