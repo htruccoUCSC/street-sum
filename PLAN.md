@@ -28,4 +28,4 @@ Key gameplay challenge: Can players collect and craft tokens from nearby locatio
 - [x] populate cells with tokens using a deterministic hashing mechanism
 - [x] display if cells are populated with a coin image
 - [x] allow players to pick up tokens from cells
-- [ ] allow players to craft a new token play placing their token in a cell with a token of equal value
+- [x] allow players to craft a new token play placing their token in a cell with a token of equal value

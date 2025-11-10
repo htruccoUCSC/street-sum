@@ -122,7 +122,6 @@ function spawnTokenAtCell(i: number, j: number) {
   const coinMarker = createCoinMarker(i, j, tokenValue);
   const key = `${i},${j}`;
   tokenMap.set(key, { marker: coinMarker, value: tokenValue });
-
   coinMarker.on("click", () => {
     const withinRange = Math.abs(i) <= PICKUP_RADIUS &&
       Math.abs(j) <= PICKUP_RADIUS;
@@ -131,11 +130,26 @@ function spawnTokenAtCell(i: number, j: number) {
         `Too far to pick up (need <= ${PICKUP_RADIUS} blocks)`;
       return;
     }
+    const entry = tokenMap.get(key);
+    if (!entry) return; // nothing to pick up (race)
+    const currentValue = entry.value;
     if (playerHeldToken === null) {
-      playerHeldToken = tokenValue;
-      statusPanelDiv.innerHTML = `Holding: ${tokenValue}`;
-      coinMarker.remove();
+      // pick up the token
+      playerHeldToken = currentValue;
+      statusPanelDiv.innerHTML = `Holding: ${currentValue}`;
+      entry.marker.remove();
       tokenMap.delete(key);
+    } else if (playerHeldToken === currentValue) {
+      // merge: double the token on the tile
+      const newValue = currentValue * 2;
+      const el = entry.marker.getElement();
+      if (el) {
+        const coinEl = el.querySelector(".coin");
+        if (coinEl) coinEl.textContent = String(newValue);
+      }
+      tokenMap.set(key, { marker: entry.marker, value: newValue });
+      playerHeldToken = null;
+      statusPanelDiv.innerHTML = `Merged to ${newValue} — Holding: none`;
     } else {
       statusPanelDiv.innerHTML =
         `Already holding ${playerHeldToken}. Drop it first.`;
@@ -154,10 +168,32 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
       return;
     }
     const key = `${i},${j}`;
-    if (tokenMap.has(key)) {
+    const entry = tokenMap.get(key);
+
+    // If tile has a token and player is holding one, attempt merge (must be equal)
+    if (entry && playerHeldToken !== null) {
+      if (entry.value === playerHeldToken) {
+        const newValue = entry.value * 2;
+        const markerElement = entry.marker.getElement();
+        if (markerElement) {
+          const coinEl = markerElement.querySelector(".coin");
+          if (coinEl) coinEl.textContent = String(newValue);
+        }
+        tokenMap.set(key, { marker: entry.marker, value: newValue });
+        playerHeldToken = null;
+        statusPanelDiv.innerHTML = `Merged to ${newValue} — Holding: none`;
+      } else {
+        statusPanelDiv.innerHTML = `Can't merge different token values`;
+      }
+      return;
+    }
+
+    // If tile already occupied and there's no merging, reject
+    if (entry) {
       statusPanelDiv.innerHTML = `Tile already has a token`;
       return;
     }
+
     if (playerHeldToken === null) {
       statusPanelDiv.innerHTML = `Not holding a token to place`;
       return;
@@ -167,7 +203,7 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
     const placedMarker = createCoinMarker(i, j, placedValue);
     tokenMap.set(key, { marker: placedMarker, value: placedValue });
 
-    // wire pickup for placed marker
+    // wire pickup for placed marker (read current tokenMap value on click)
     placedMarker.on("click", () => {
       const withinRange = Math.abs(i) <= PICKUP_RADIUS &&
         Math.abs(j) <= PICKUP_RADIUS;
@@ -176,11 +212,26 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
           `Too far to pick up (need <= ${PICKUP_RADIUS} blocks)`;
         return;
       }
+      const e = tokenMap.get(key);
+      if (!e) return;
+      const current = e.value;
       if (playerHeldToken === null) {
-        playerHeldToken = placedValue;
-        statusPanelDiv.innerHTML = `Holding: ${placedValue}`;
+        // pick up
+        playerHeldToken = current;
+        statusPanelDiv.innerHTML = `Holding: ${current}`;
         placedMarker.remove();
         tokenMap.delete(key);
+      } else if (playerHeldToken === current) {
+        // merge
+        const newValue = current * 2;
+        const el = e.marker.getElement();
+        if (el) {
+          const coinEl = el.querySelector(".coin");
+          if (coinEl) coinEl.textContent = String(newValue);
+        }
+        tokenMap.set(key, { marker: e.marker, value: newValue });
+        playerHeldToken = null;
+        statusPanelDiv.innerHTML = `Merged to ${newValue} — Holding: none`;
       } else {
         statusPanelDiv.innerHTML =
           `Already holding ${playerHeldToken}. Drop it first.`;
