@@ -43,4 +43,4 @@ Key gameplay challenge: Can players move around the cells and collect previously
 - [x] Add player movment buttons to the lower interface
 - [x] Add the ability for the player to move from cell to cell by pressing one of the buttons
 - [x] Dynamicaly update the players 3 cell interaction range when moving
-- [ ] Increase the sufficient value threshold to 128
+- [x] Increase the sufficient value threshold to 128

@@ -78,7 +78,7 @@ const visibleCellKeys = new Set<string>();
 
 // Show a temporary congratulations message when player reaches a target token value
 function congratulateIfReached(value: number) {
-  const TARGET = 8;
+  const TARGET = 128;
   if (value !== TARGET) return;
   const msg = document.createElement("div");
   msg.textContent = `🎉 Congratulations — you made an ${TARGET} token!`;
