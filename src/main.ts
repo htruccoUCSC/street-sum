@@ -194,10 +194,12 @@ btnRight.addEventListener("click", () => movePlayer("east"));
 // helper: create and add the rectangle for cell
 function createRect(i: number, j: number) {
   const bounds = cellToBounds(i, j);
+  const withinRange = Math.abs(i - playerCell.i) <= PICKUP_RADIUS &&
+    Math.abs(j - playerCell.j) <= PICKUP_RADIUS;
   const rect = leaflet.rectangle(bounds, {
     weight: 1,
-    color: "#3388ff",
-    fillOpacity: 0.04,
+    color: withinRange ? "#33aa33" : "#3388ff",
+    fillOpacity: withinRange ? 0.12 : 0.04,
   });
   rect.addTo(viewLayer);
   return rect;
@@ -265,6 +267,24 @@ function renderVisibleCells() {
       createCell(si, sj);
       visibleCellKeys.add(key);
     }
+  }
+  // Update styles for all visible rectangles in case playerCell changed
+  updateVisibleRectStyles();
+}
+
+// Update rectangle styles (color/fill) based on whether the cell is within
+// the player's pickup radius.
+function updateVisibleRectStyles() {
+  for (const [key, rect] of rectMap.entries()) {
+    const [iStr, jStr] = key.split(",");
+    const i = Number(iStr);
+    const j = Number(jStr);
+    const withinRange = Math.abs(i - playerCell.i) <= PICKUP_RADIUS &&
+      Math.abs(j - playerCell.j) <= PICKUP_RADIUS;
+    rect.setStyle({
+      color: withinRange ? "#33aa33" : "#3388ff",
+      fillOpacity: withinRange ? 0.12 : 0.04,
+    });
   }
 }
 
