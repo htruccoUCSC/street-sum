@@ -41,6 +41,6 @@ Key gameplay challenge: Can players move around the cells and collect previously
 - [x] Allign cells using an earth-spanning coordinate system
 - [x] Generate a grid of cells centered around the players camera
 - [x] Add player movment buttons to the lower interface
-- [ ] Add the ability for the player to move from cell to cell by pressing one of the buttons
+- [x] Add the ability for the player to move from cell to cell by pressing one of the buttons
 - [ ] Dynamicaly update the players 3 cell interaction range when moving
 - [ ] Increase the sufficient value threshold to 128

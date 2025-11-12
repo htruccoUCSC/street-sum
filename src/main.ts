@@ -71,6 +71,10 @@ statusPanelDiv.append(statusMessagesDiv);
 let playerHeldToken: number | null = null;
 // Track tokens on tiles by their i,j key -> { marker, value }
 const tokenMap = new Map<string, { marker: leaflet.Marker; value: number }>();
+// Track drawn rectangles by cell key so we can remove them when they leave view
+const rectMap = new Map<string, leaflet.Rectangle>();
+// Set of currently visible cell keys (i,j strings)
+const visibleCellKeys = new Set<string>();
 
 // Show a temporary congratulations message when player reaches a target token value
 function congratulateIfReached(value: number) {
@@ -83,14 +87,11 @@ function congratulateIfReached(value: number) {
   statusMessagesDiv.append(msg);
   setTimeout(() => msg.remove(), 5000);
 }
-
-// Our classroom location
+// Our classroom location (used as initial player/map center)
 const CLASSROOM_LATLNG = leaflet.latLng(
   36.997936938057016,
   -122.05703507501151,
 );
-
-// Tunable gameplay parameters
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
 // Token distribution tuning: skew > 1 biases toward lower-value bins (more 1s and 2s)
@@ -148,8 +149,47 @@ function cellToBounds(i: number, j: number) {
   ]);
 }
 
-// Player's current cell indices
+// Player's current cell indices (mutable when moving)
 const playerCell = latLngToCell(origin.lat, origin.lng);
+
+// Helper: bottom-left corner LatLng of a cell (used for player placement)
+function cellBottomLeftLatLng(i: number, j: number) {
+  const lat = i * TILE_DEGREES;
+  const lng = j * TILE_DEGREES;
+  return leaflet.latLng(lat, lng);
+}
+
+// Place the player marker at the bottom-left corner of the player's cell
+playerMarker.setLatLng(cellBottomLeftLatLng(playerCell.i, playerCell.j));
+
+// Move player by one cell in the given direction and re-render view
+function movePlayer(dir: "north" | "south" | "east" | "west") {
+  switch (dir) {
+    case "north":
+      playerCell.i += 1;
+      break;
+    case "south":
+      playerCell.i -= 1;
+      break;
+    case "east":
+      playerCell.j += 1;
+      break;
+    case "west":
+      playerCell.j -= 1;
+      break;
+  }
+  // Move the player marker to the new bottom-left corner
+  const pos = cellBottomLeftLatLng(playerCell.i, playerCell.j);
+  playerMarker.setLatLng(pos);
+  // Re-render the visible cells so reach checks and view align with new cell
+  renderVisibleCells();
+}
+
+// Wire movement buttons to the movePlayer function
+btnUp.addEventListener("click", () => movePlayer("north"));
+btnDown.addEventListener("click", () => movePlayer("south"));
+btnLeft.addEventListener("click", () => movePlayer("west"));
+btnRight.addEventListener("click", () => movePlayer("east"));
 
 // helper: create and add the rectangle for cell
 function createRect(i: number, j: number) {
@@ -183,8 +223,6 @@ function createCoinMarker(i: number, j: number, value: number) {
 
 // Render all cells that intersect the current map view.
 function renderVisibleCells() {
-  viewLayer.clearLayers();
-  tokenMap.clear();
   const bounds = map.getBounds();
   const south = bounds.getSouth();
   const north = bounds.getNorth();
@@ -196,9 +234,36 @@ function renderVisibleCells() {
   const minJ = Math.floor(west / TILE_DEGREES);
   const maxJ = Math.floor(east / TILE_DEGREES);
 
+  const newVisible = new Set<string>();
   for (let i = minI; i <= maxI; i++) {
     for (let j = minJ; j <= maxJ; j++) {
-      createCell(i, j);
+      newVisible.add(`${i},${j}`);
+    }
+  }
+
+  // Remove cells that are no longer visible
+  for (const key of Array.from(visibleCellKeys)) {
+    if (!newVisible.has(key)) {
+      const r = rectMap.get(key);
+      if (r) {
+        r.remove();
+        rectMap.delete(key);
+      }
+      const e = tokenMap.get(key);
+      if (e) {
+        e.marker.remove();
+        tokenMap.delete(key);
+      }
+      visibleCellKeys.delete(key);
+    }
+  }
+
+  // Add new visible cells (leave existing ones alone)
+  for (const key of newVisible) {
+    if (!visibleCellKeys.has(key)) {
+      const [si, sj] = key.split(",").map((s) => Number(s));
+      createCell(si, sj);
+      visibleCellKeys.add(key);
     }
   }
 }
@@ -348,6 +413,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
 // Create a single grid cell at offsets (i,j) from origin. This function
 function createCell(i: number, j: number) {
   const rect = createRect(i, j);
+  const key = `${i},${j}`;
+  rectMap.set(key, rect);
   spawnTokenAtCell(i, j);
   attachDropHandler(i, j, rect);
 }
