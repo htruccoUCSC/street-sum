@@ -60,8 +60,6 @@ const CLASSROOM_LATLNG = leaflet.latLng(
 // Tunable gameplay parameters
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
-const NEIGHBORHOOD_SIZE_X = 35;
-const NEIGHBORHOOD_SIZE_Y = 14;
 // Token distribution tuning: skew > 1 biases toward lower-value bins (more 1s and 2s)
 const TOKEN_SKEW = 2;
 // A token is present when luck < TOKEN_SPAWN_PROBABILITY
@@ -87,6 +85,10 @@ leaflet
       '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   })
   .addTo(map);
+
+// Layer group that holds all currently visible cells/markers. We clear and
+// re-render this group when the camera moves.
+const viewLayer = leaflet.layerGroup().addTo(map);
 
 // Add a marker to represent the player
 const playerMarker = leaflet.marker(CLASSROOM_LATLNG);
@@ -114,7 +116,7 @@ function cellToBounds(i: number, j: number) {
   ]);
 }
 
-// Player's current cell indices (center the generated neighborhood around this)
+// Player's current cell indices
 const playerCell = latLngToCell(origin.lat, origin.lng);
 
 // helper: create and add the rectangle for cell
@@ -125,7 +127,7 @@ function createRect(i: number, j: number) {
     color: "#3388ff",
     fillOpacity: 0.04,
   });
-  rect.addTo(map);
+  rect.addTo(viewLayer);
   return rect;
 }
 
@@ -143,8 +145,32 @@ function createCoinMarker(i: number, j: number, value: number) {
     icon: coinIcon,
     interactive: true,
   });
-  marker.addTo(map);
+  marker.addTo(viewLayer);
   return marker;
+}
+
+// Render all cells that intersect the current map view. This clears the
+// previous viewLayer and tokenMap so we don't track history (per current
+// iteration requirements).
+function renderVisibleCells() {
+  viewLayer.clearLayers();
+  tokenMap.clear();
+  const bounds = map.getBounds();
+  const south = bounds.getSouth();
+  const north = bounds.getNorth();
+  const west = bounds.getWest();
+  const east = bounds.getEast();
+
+  const minI = Math.floor(south / TILE_DEGREES);
+  const maxI = Math.floor(north / TILE_DEGREES);
+  const minJ = Math.floor(west / TILE_DEGREES);
+  const maxJ = Math.floor(east / TILE_DEGREES);
+
+  for (let i = minI; i <= maxI; i++) {
+    for (let j = minJ; j <= maxJ; j++) {
+      createCell(i, j);
+    }
+  }
 }
 
 // helper: spawn a token from deterministic luck and wire its pickup
@@ -296,13 +322,10 @@ function createCell(i: number, j: number) {
   attachDropHandler(i, j, rect);
 }
 
-// Draw a grid of tiles around the player's location using the neighborhood range.
-const startI = playerCell.i - NEIGHBORHOOD_SIZE_Y;
-const endI = playerCell.i + NEIGHBORHOOD_SIZE_Y;
-const startJ = playerCell.j - NEIGHBORHOOD_SIZE_X;
-const endJ = playerCell.j + NEIGHBORHOOD_SIZE_X;
-for (let i = startI; i <= endI; i++) {
-  for (let j = startJ; j <= endJ; j++) {
-    createCell(i, j);
-  }
-}
+// Initial render: draw only cells visible in the current camera view.
+renderVisibleCells();
+
+// Re-render visible cells whenever the map stops moving.
+map.on("moveend", () => {
+  renderVisibleCells();
+});

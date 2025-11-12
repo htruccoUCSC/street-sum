@@ -39,7 +39,7 @@ Key gameplay challenge: Can players move around the cells and collect previously
 ### D3.b Steps
 
 - [x] Allign cells using an earth-spanning coordinate system
-- [ ] Generate a grid of cells only visible to the players camera
+- [x] Generate a grid of cells centered around the players camera
 - [ ] Add player movment buttons to the lower interface
 - [ ] Add the ability for the player to move from cell to cell by pressing one of the buttons
 - [ ] Dynamicaly update the players 3 cell interaction range when moving
