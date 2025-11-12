@@ -200,29 +200,7 @@ function spawnTokenAtCell(i: number, j: number) {
 
 // helper: attach drop handler so clicking rect places a held token
 function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
-  rect.on("click", (ev: leaflet.LeafletMouseEvent) => {
-    // Print debugging facts about the clicked cell to the console
-    const key = `${i},${j}`;
-    const bounds = cellToBounds(i, j);
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-    console.log("Cell click:", {
-      i,
-      j,
-      cellCenterLat: (i + 0.5) * TILE_DEGREES,
-      cellCenterLng: (j + 0.5) * TILE_DEGREES,
-      bounds: {
-        south: sw.lat,
-        west: sw.lng,
-        north: ne.lat,
-        east: ne.lng,
-      },
-      clickLatLng: ev && ev.latlng ? ev.latlng : null,
-      tokenAtCell: tokenMap.get(key) ? tokenMap.get(key)!.value : null,
-      playerCell,
-      playerHeldToken,
-    });
-
+  rect.on("click", () => {
     const withinRange = Math.abs(i - playerCell.i) <= PICKUP_RADIUS &&
       Math.abs(j - playerCell.j) <= PICKUP_RADIUS;
     if (!withinRange) {
@@ -230,6 +208,7 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
         `Too far to place (need <= ${PICKUP_RADIUS} blocks)`;
       return;
     }
+    const key = `${i},${j}`;
     const entry = tokenMap.get(key);
 
     // If tile has a token and player is holding one, attempt merge (must be equal)
@@ -270,8 +249,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
 
     // wire pickup for placed marker (read current tokenMap value on click)
     placedMarker.on("click", () => {
-      const withinRange = Math.abs(i) <= PICKUP_RADIUS &&
-        Math.abs(j) <= PICKUP_RADIUS;
+      const withinRange = Math.abs(i - playerCell.i) <= PICKUP_RADIUS &&
+        Math.abs(j - playerCell.j) <= PICKUP_RADIUS;
       if (!withinRange) {
         statusTextDiv.textContent =
           `Too far to pick up (need <= ${PICKUP_RADIUS} blocks)`;
