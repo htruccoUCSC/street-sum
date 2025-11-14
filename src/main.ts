@@ -71,6 +71,8 @@ statusPanelDiv.append(statusMessagesDiv);
 let playerHeldToken: number | null = null;
 // Track tokens on tiles by their i,j key -> { marker, value }
 const tokenMap = new Map<string, { marker: leaflet.Marker; value: number }>();
+// Record player-driven changes so they can be inspected or persisted.
+const changedCells = new Map<string, { value: number | null }>();
 // (No global rect tracking — rectangles are created and removed per-render)
 
 // Show a temporary congratulations message when player reaches a target token value
@@ -274,6 +276,9 @@ function spawnTokenAtCell(i: number, j: number) {
       statusTextDiv.textContent = `Holding: ${currentValue}`;
       entry.marker.remove();
       tokenMap.delete(key);
+      // record that this cell is now empty (player picked it up)
+      changedCells.set(key, { value: null });
+      console.log(`changedCells[${key}] = null`);
     } else if (playerHeldToken === currentValue) {
       // merge: double the token on the tile
       const newValue = currentValue * 2;
@@ -283,6 +288,9 @@ function spawnTokenAtCell(i: number, j: number) {
         if (coinEl) coinEl.textContent = String(newValue);
       }
       tokenMap.set(key, { marker: entry.marker, value: newValue });
+      // record the merge
+      changedCells.set(key, { value: newValue });
+      console.log(`changedCells[${key}] = ${newValue}`);
       // If we reached the target value, show congratulations
       congratulateIfReached(newValue);
       playerHeldToken = null;
@@ -317,6 +325,9 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
           if (coinEl) coinEl.textContent = String(newValue);
         }
         tokenMap.set(key, { marker: entry.marker, value: newValue });
+        // record the merge
+        changedCells.set(key, { value: newValue });
+        console.log(`changedCells[${key}] = ${newValue}`);
         // Congratulate if we produced the target value
         congratulateIfReached(newValue);
         playerHeldToken = null;
@@ -341,6 +352,9 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
     const placedValue = playerHeldToken as number;
     const placedMarker = createCoinMarker(i, j, placedValue);
     tokenMap.set(key, { marker: placedMarker, value: placedValue });
+    // record the placement
+    changedCells.set(key, { value: placedValue });
+    console.log(`changedCells[${key}] = ${placedValue}`);
     // (Do not congratulate on simple placement — only on merges.)
 
     // wire pickup for placed marker (read current tokenMap value on click)
@@ -361,6 +375,9 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
         statusTextDiv.textContent = `Holding: ${current}`;
         placedMarker.remove();
         tokenMap.delete(key);
+        // record pickup -> now empty
+        changedCells.set(key, { value: null });
+        console.log(`changedCells[${key}] = null`);
       } else if (playerHeldToken === current) {
         // merge
         const newValue = current * 2;
@@ -370,6 +387,9 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
           if (coinEl) coinEl.textContent = String(newValue);
         }
         tokenMap.set(key, { marker: e.marker, value: newValue });
+        // record merge
+        changedCells.set(key, { value: newValue });
+        console.log(`changedCells[${key}] = ${newValue}`);
         // If this merge hit the target, show congrats
         congratulateIfReached(newValue);
         playerHeldToken = null;
