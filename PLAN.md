@@ -54,4 +54,4 @@ Key gameplay challenge: Can the game maintain the changes the player makes?
 
 - [x] Remove the current visibilty tracking system
 - [x] Create a map that tracks any updated cells
-- [ ] Update the screen redrawing logic to check the map for any changed cells
+- [x] Update the screen redrawing logic to check the map for any changed cells

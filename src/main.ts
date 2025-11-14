@@ -408,7 +408,65 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
 // Create a single grid cell at offsets (i,j) from origin. This function
 function createCell(i: number, j: number) {
   const rect = createRect(i, j);
-  spawnTokenAtCell(i, j);
+  const key = `${i},${j}`;
+
+  // If the player has changed this cell, honor that state instead of
+  // deterministically spawning a token.
+  const changed = changedCells.get(key);
+  if (changed !== undefined) {
+    // If changed.value is non-null, place that token value on the tile.
+    if (changed.value !== null) {
+      const placedMarker = createCoinMarker(i, j, changed.value);
+      tokenMap.set(key, { marker: placedMarker, value: changed.value });
+      // Wire pickup/merge handlers for this placed marker
+      placedMarker.on("click", () => {
+        const withinRange = Math.abs(i - playerCell.i) <= PICKUP_RADIUS &&
+          Math.abs(j - playerCell.j) <= PICKUP_RADIUS;
+        if (!withinRange) {
+          statusTextDiv.textContent =
+            `Too far to pick up (need <= ${PICKUP_RADIUS} blocks)`;
+          return;
+        }
+        const e = tokenMap.get(key);
+        if (!e) return;
+        const current = e.value;
+        if (playerHeldToken === null) {
+          // pick up
+          playerHeldToken = current;
+          statusTextDiv.textContent = `Holding: ${current}`;
+          placedMarker.remove();
+          tokenMap.delete(key);
+          // record pickup -> now empty
+          changedCells.set(key, { value: null });
+          console.log(`changedCells[${key}] = null`);
+        } else if (playerHeldToken === current) {
+          // merge
+          const newValue = current * 2;
+          const el = e.marker.getElement();
+          if (el) {
+            const coinEl = el.querySelector(".coin");
+            if (coinEl) coinEl.textContent = String(newValue);
+          }
+          tokenMap.set(key, { marker: e.marker, value: newValue });
+          // record merge
+          changedCells.set(key, { value: newValue });
+          console.log(`changedCells[${key}] = ${newValue}`);
+          // If this merge hit the target, show congrats
+          congratulateIfReached(newValue);
+          playerHeldToken = null;
+          statusTextDiv.textContent = `Merged to ${newValue} — Holding: none`;
+        } else {
+          statusTextDiv.textContent =
+            `Already holding ${playerHeldToken}. Drop it first.`;
+        }
+      });
+    }
+    // If changed.value is null, intentionally leave tile empty.
+  } else {
+    // No recorded change: spawn deterministically from luck
+    spawnTokenAtCell(i, j);
+  }
+
   attachDropHandler(i, j, rect);
 }
 
