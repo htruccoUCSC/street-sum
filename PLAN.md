@@ -52,6 +52,6 @@ Key gameplay challenge: Can the game maintain the changes the player makes?
 
 ### D3.c Steps
 
-- [ ] Remove the current visibilty tracking system
+- [x] Remove the current visibilty tracking system
 - [ ] Create a map that tracks any updated cells
 - [ ] Update the screen redrawing logic to check the map for any changed cells

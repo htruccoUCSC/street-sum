@@ -71,17 +71,14 @@ statusPanelDiv.append(statusMessagesDiv);
 let playerHeldToken: number | null = null;
 // Track tokens on tiles by their i,j key -> { marker, value }
 const tokenMap = new Map<string, { marker: leaflet.Marker; value: number }>();
-// Track drawn rectangles by cell key so we can remove them when they leave view
-const rectMap = new Map<string, leaflet.Rectangle>();
-// Set of currently visible cell keys (i,j strings)
-const visibleCellKeys = new Set<string>();
+// (No global rect tracking — rectangles are created and removed per-render)
 
 // Show a temporary congratulations message when player reaches a target token value
 function congratulateIfReached(value: number) {
   const TARGET = 128;
   if (value !== TARGET) return;
   const msg = document.createElement("div");
-  msg.textContent = `🎉 Congratulations — you made an ${TARGET} token!`;
+  msg.textContent = `🎉 Congratulations — you made a ${TARGET} token!`;
   msg.className = "congrats-message";
   // place the message in the status panel so it's visible below the map
   statusMessagesDiv.append(msg);
@@ -225,6 +222,8 @@ function createCoinMarker(i: number, j: number, value: number) {
 
 // Render all cells that intersect the current map view.
 function renderVisibleCells() {
+  viewLayer.clearLayers();
+  tokenMap.clear();
   const bounds = map.getBounds();
   const south = bounds.getSouth();
   const north = bounds.getNorth();
@@ -236,56 +235,12 @@ function renderVisibleCells() {
   const minJ = Math.floor(west / TILE_DEGREES);
   const maxJ = Math.floor(east / TILE_DEGREES);
 
-  const newVisible = new Set<string>();
   for (let i = minI; i <= maxI; i++) {
     for (let j = minJ; j <= maxJ; j++) {
-      newVisible.add(`${i},${j}`);
+      createCell(i, j);
     }
   }
-
-  // Remove cells that are no longer visible
-  for (const key of Array.from(visibleCellKeys)) {
-    if (!newVisible.has(key)) {
-      const r = rectMap.get(key);
-      if (r) {
-        r.remove();
-        rectMap.delete(key);
-      }
-      const e = tokenMap.get(key);
-      if (e) {
-        e.marker.remove();
-        tokenMap.delete(key);
-      }
-      visibleCellKeys.delete(key);
-    }
-  }
-
-  // Add new visible cells (leave existing ones alone)
-  for (const key of newVisible) {
-    if (!visibleCellKeys.has(key)) {
-      const [si, sj] = key.split(",").map((s) => Number(s));
-      createCell(si, sj);
-      visibleCellKeys.add(key);
-    }
-  }
-  // Update styles for all visible rectangles in case playerCell changed
-  updateVisibleRectStyles();
-}
-
-// Update rectangle styles (color/fill) based on whether the cell is within
-// the player's pickup radius.
-function updateVisibleRectStyles() {
-  for (const [key, rect] of rectMap.entries()) {
-    const [iStr, jStr] = key.split(",");
-    const i = Number(iStr);
-    const j = Number(jStr);
-    const withinRange = Math.abs(i - playerCell.i) <= PICKUP_RADIUS &&
-      Math.abs(j - playerCell.j) <= PICKUP_RADIUS;
-    rect.setStyle({
-      color: withinRange ? "#33aa33" : "#3388ff",
-      fillOpacity: withinRange ? 0.12 : 0.04,
-    });
-  }
+  // No global rectangle tracking — styles are applied at creation time.
 }
 
 // helper: spawn a token from deterministic luck and wire its pickup
@@ -433,8 +388,6 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
 // Create a single grid cell at offsets (i,j) from origin. This function
 function createCell(i: number, j: number) {
   const rect = createRect(i, j);
-  const key = `${i},${j}`;
-  rectMap.set(key, rect);
   spawnTokenAtCell(i, j);
   attachDropHandler(i, j, rect);
 }
