@@ -76,7 +76,7 @@ const changedCells = new Map<string, { value: number | null }>();
 // (No global rect tracking — rectangles are created and removed per-render)
 
 // Movement mode: 'button' = use the on-screen buttons; 'geolocation' = use device location
-const movementMode: "button" | "geolocation" = "button";
+let movementMode: "button" | "geolocation" = "button";
 
 // Enable/disable movement buttons based on current movementMode
 function updateMovementButtons() {
@@ -174,9 +174,17 @@ function cellBottomLeftLatLng(i: number, j: number) {
   return leaflet.latLng(lat, lng);
 }
 
-// NOTE: do not place or add the player marker here — it will be placed
-// and added once the geolocation startup check completes (see
-// `tryUseGeolocationAtStartup`).
+// Helper: given an arbitrary lat/lng, compute the cell indices
+function snapLatLngToCellBottomLeft(lat: number, lng: number) {
+  const cell = latLngToCell(lat, lng);
+  const snapped = cellBottomLeftLatLng(cell.i, cell.j);
+  return { cell, snapped } as {
+    cell: { i: number; j: number };
+    snapped: leaflet.LatLng;
+  };
+}
+
+// NOTE: do not place or add the player marker here — it will be placed and added once the geolocation startup check completes
 
 // Move player by one cell in the given direction and re-render view
 function movePlayer(
@@ -435,8 +443,7 @@ function createCell(i: number, j: number) {
   const rect = createRect(i, j);
   const key = `${i},${j}`;
 
-  // If the player has changed this cell, honor that state instead of
-  // deterministically spawning a token.
+  // If the player has changed this cell, honor that state.
   const changed = changedCells.get(key);
   if (changed !== undefined) {
     // If changed.value is non-null, place that token value on the tile.
@@ -495,9 +502,7 @@ function createCell(i: number, j: number) {
   attachDropHandler(i, j, rect);
 }
 
-// Attempt to use browser geolocation on startup. If successful, snap the
-// returned location to the nearest cell and start the player there. On
-// failure or denial, fall back to the predefined classroom origin.
+// Attempt to use browser geolocation on startup.
 function tryUseGeolocationAtStartup() {
   if (!("geolocation" in navigator)) {
     // No geolocation support — render at classroom origin
@@ -514,10 +519,9 @@ function tryUseGeolocationAtStartup() {
     (pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      const cell = latLngToCell(lat, lng);
+      const { cell, snapped } = snapLatLngToCellBottomLeft(lat, lng);
       playerCell.i = cell.i;
       playerCell.j = cell.j;
-      const snapped = cellBottomLeftLatLng(playerCell.i, playerCell.j);
       playerMarker.setLatLng(snapped);
       playerMarker.addTo(map);
       map.setView(snapped, GAMEPLAY_ZOOM_LEVEL);
@@ -526,6 +530,11 @@ function tryUseGeolocationAtStartup() {
       msg.className = "status-message";
       statusMessagesDiv.append(msg);
       setTimeout(() => msg.remove(), 4000);
+      // Switch movement mode to geolocation since the user granted permission
+      movementMode = "geolocation";
+      updateMovementButtons();
+      // Start continuous updates
+      startGeolocationWatch();
       renderVisibleCells();
     },
     (_err) => {
@@ -534,8 +543,9 @@ function tryUseGeolocationAtStartup() {
       msg.className = "status-message";
       statusMessagesDiv.append(msg);
       setTimeout(() => msg.remove(), 4000);
-      // leave playerCell as-is (classroom origin) and render
-      const snapped = cellBottomLeftLatLng(playerCell.i, playerCell.j);
+      // Ensure any previous watch is stopped
+      stopGeolocationWatch();
+      const { snapped } = snapLatLngToCellBottomLeft(origin.lat, origin.lng);
       playerMarker.setLatLng(snapped);
       playerMarker.addTo(map);
       renderVisibleCells();
@@ -546,6 +556,89 @@ function tryUseGeolocationAtStartup() {
 
 // Initial startup: prefer geolocation but fall back to classroom origin
 tryUseGeolocationAtStartup();
+
+// Geolocation watch controls: when in geolocation movement mode we want to continuously update the player's cell as the device moves.
+let geoWatchId: number | null = null;
+
+function startGeolocationWatch() {
+  if (!("geolocation" in navigator)) return;
+  if (geoWatchId !== null) return; // already watching
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const { cell, snapped } = snapLatLngToCellBottomLeft(lat, lng);
+      // Only update when the snapped cell changes to avoid unnecessary work
+      if (cell.i !== playerCell.i || cell.j !== playerCell.j) {
+        playerCell.i = cell.i;
+        playerCell.j = cell.j;
+        playerMarker.setLatLng(snapped);
+        // Keep the map centered on the player when moving
+        map.setView(snapped, GAMEPLAY_ZOOM_LEVEL);
+        renderVisibleCells();
+      }
+    },
+    (err) => {
+      // err.code values: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+      if (!err) return;
+      // Ignore intermittent timeouts (3) and position-unavailable (2).
+      if (err.code === 3) {
+        console.debug("Geolocation watch timeout (ignored)", err.message);
+        return;
+      }
+      if (err.code === 2) {
+        console.debug(
+          "Geolocation position unavailable (ignored)",
+          err.message,
+        );
+        return;
+      }
+      // If permission was revoked, stop the watch and notify the user.
+      if (err.code === 1) {
+        stopGeolocationWatch();
+        const msg = document.createElement("div");
+        msg.textContent = "Location permission denied — tracking stopped.";
+        msg.className = "status-message";
+        statusMessagesDiv.append(msg);
+        setTimeout(() => msg.remove(), 4000);
+        return;
+      }
+      // For other errors (e.g., POSITION_UNAVAILABLE) show a brief message.
+      console.warn("Geolocation watch error", err);
+      const msg = document.createElement("div");
+      msg.textContent = `Location error: ${err.message || "unknown"}`;
+      msg.className = "status-message";
+      statusMessagesDiv.append(msg);
+      setTimeout(() => msg.remove(), 4000);
+    },
+    { enableHighAccuracy: false, maximumAge: 10000, timeout: 10000 },
+  );
+  const msg = document.createElement("div");
+  msg.textContent = "Started location tracking";
+  msg.className = "status-message";
+  statusMessagesDiv.append(msg);
+  setTimeout(() => msg.remove(), 2000);
+}
+
+function stopGeolocationWatch() {
+  if (geoWatchId === null) return;
+  navigator.geolocation.clearWatch(geoWatchId);
+  geoWatchId = null;
+  const msg = document.createElement("div");
+  msg.textContent = "Stopped location tracking";
+  msg.className = "status-message";
+  statusMessagesDiv.append(msg);
+  setTimeout(() => msg.remove(), 2000);
+}
+
+// Expose helpers for testing in the console
+declare global {
+  interface Window {
+    startGeolocationWatch?: () => void;
+    stopGeolocationWatch?: () => void;
+  }
+}
 
 // Re-render visible cells whenever the map stops moving.
 map.on("moveend", () => {
