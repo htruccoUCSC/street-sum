@@ -17,6 +17,19 @@ const controlPanelDiv = document.createElement("div");
 controlPanelDiv.id = "controlPanel";
 document.body.append(controlPanelDiv);
 
+// Movement mode switch UI (toggle)
+const movementModeDiv = document.createElement("div");
+movementModeDiv.className = "movement-mode";
+const movementModeLabel = document.createElement("label");
+movementModeLabel.htmlFor = "movementModeToggle";
+movementModeLabel.textContent = "Use geolocation:";
+const movementModeToggle = document.createElement("input");
+movementModeToggle.type = "checkbox";
+movementModeToggle.id = "movementModeToggle";
+movementModeToggle.setAttribute("aria-label", "Toggle geolocation movement");
+movementModeDiv.append(movementModeLabel, movementModeToggle);
+controlPanelDiv.append(movementModeDiv);
+
 const mapDiv = document.createElement("div");
 mapDiv.id = "map";
 document.body.append(mapDiv);
@@ -76,7 +89,8 @@ const changedCells = new Map<string, { value: number | null }>();
 // (No global rect tracking — rectangles are created and removed per-render)
 
 // Movement mode: 'button' = use the on-screen buttons; 'geolocation' = use device location
-let movementMode: "button" | "geolocation" = "button";
+// Default to geolocation movement mode; the startup flow will request the user's location and fall back to buttons if unavailable.
+let movementMode: "button" | "geolocation" = "geolocation";
 
 // Enable/disable movement buttons based on current movementMode
 function updateMovementButtons() {
@@ -89,6 +103,71 @@ function updateMovementButtons() {
 
 // Initialize button disabled state
 updateMovementButtons();
+
+// Helper: show a short transient status message
+function showTransientStatus(text: string, ms = 3000) {
+  const msg = document.createElement("div");
+  msg.textContent = text;
+  msg.className = "status-message";
+  statusMessagesDiv.append(msg);
+  setTimeout(() => msg.remove(), ms);
+}
+
+// Wire movement-mode toggle after movementMode and helpers are defined
+movementModeToggle.checked = movementMode === "geolocation";
+movementModeToggle.addEventListener("change", () => {
+  const wantsGeo = movementModeToggle.checked;
+  if (
+    (wantsGeo && movementMode === "geolocation") ||
+    (!wantsGeo && movementMode === "button")
+  ) return;
+  if (!wantsGeo) {
+    // Switch to button controls: stop tracking but keep current cell
+    movementMode = "button";
+    updateMovementButtons();
+    stopGeolocationWatch();
+    showTransientStatus("Switched to button movement", 2000);
+    return;
+  }
+
+  // Switch to geolocation: request current position to prompt for permission if needed, snap to cell on success, and start watch.
+  if (!("geolocation" in navigator)) {
+    showTransientStatus("Geolocation not supported in this browser", 3000);
+    movementModeToggle.checked = false;
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { cell, snapped } = snapLatLngToCellBottomLeft(
+        pos.coords.latitude,
+        pos.coords.longitude,
+      );
+      playerCell.i = cell.i;
+      playerCell.j = cell.j;
+      playerMarker.setLatLng(snapped);
+      // Ensure the marker is on the map
+      try {
+        playerMarker.addTo(map);
+      } catch (e) {
+        console.debug(e);
+      }
+      map.setView(snapped, GAMEPLAY_ZOOM_LEVEL);
+      movementMode = "geolocation";
+      updateMovementButtons();
+      startGeolocationWatch();
+      showTransientStatus("Switched to geolocation movement", 2000);
+      renderVisibleCells();
+    },
+    (_err) => {
+      showTransientStatus(
+        "Could not enable geolocation; staying in button mode",
+        3000,
+      );
+      movementModeToggle.checked = false;
+    },
+    { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
+  );
+});
 
 // Show a temporary congratulations message when player reaches a target token value
 function congratulateIfReached(value: number) {
@@ -530,9 +609,13 @@ function tryUseGeolocationAtStartup() {
       msg.className = "status-message";
       statusMessagesDiv.append(msg);
       setTimeout(() => msg.remove(), 4000);
-      // Switch movement mode to geolocation since the user granted permission
       movementMode = "geolocation";
       updateMovementButtons();
+      try {
+        movementModeToggle.checked = true;
+      } catch (e) {
+        console.debug("movementModeSelect not yet available", e);
+      }
       // Start continuous updates
       startGeolocationWatch();
       renderVisibleCells();
@@ -543,7 +626,13 @@ function tryUseGeolocationAtStartup() {
       msg.className = "status-message";
       statusMessagesDiv.append(msg);
       setTimeout(() => msg.remove(), 4000);
-      // Ensure any previous watch is stopped
+      movementMode = "button";
+      updateMovementButtons();
+      try {
+        movementModeToggle.checked = false;
+      } catch (e) {
+        console.debug("movementModeSelect not yet available", e);
+      }
       stopGeolocationWatch();
       const { snapped } = snapLatLngToCellBottomLeft(origin.lat, origin.lng);
       playerMarker.setLatLng(snapped);
