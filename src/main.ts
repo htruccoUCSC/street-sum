@@ -75,6 +75,21 @@ const tokenMap = new Map<string, { marker: leaflet.Marker; value: number }>();
 const changedCells = new Map<string, { value: number | null }>();
 // (No global rect tracking — rectangles are created and removed per-render)
 
+// Movement mode: 'button' = use the on-screen buttons; 'geolocation' = use device location
+const movementMode: "button" | "geolocation" = "button";
+
+// Enable/disable movement buttons based on current movementMode
+function updateMovementButtons() {
+  const disabled = movementMode !== "button";
+  btnUp.disabled = disabled;
+  btnDown.disabled = disabled;
+  btnLeft.disabled = disabled;
+  btnRight.disabled = disabled;
+}
+
+// Initialize button disabled state
+updateMovementButtons();
+
 // Show a temporary congratulations message when player reaches a target token value
 function congratulateIfReached(value: number) {
   const TARGET = 128;
@@ -122,10 +137,11 @@ leaflet
 // Layer group that holds all currently visible cells/markers.
 const viewLayer = leaflet.layerGroup().addTo(map);
 
-// Add a marker to represent the player
+// Add a marker to represent the player (do NOT add to the map yet —
+// wait for geolocation permission to be resolved so we don't prematurely
+// show the classroom spawn before the user responds to the browser prompt)
 const playerMarker = leaflet.marker(CLASSROOM_LATLNG);
 playerMarker.bindTooltip("That's you!");
-playerMarker.addTo(map);
 
 const origin = CLASSROOM_LATLNG;
 
@@ -158,11 +174,20 @@ function cellBottomLeftLatLng(i: number, j: number) {
   return leaflet.latLng(lat, lng);
 }
 
-// Place the player marker at the bottom-left corner of the player's cell
-playerMarker.setLatLng(cellBottomLeftLatLng(playerCell.i, playerCell.j));
+// NOTE: do not place or add the player marker here — it will be placed
+// and added once the geolocation startup check completes (see
+// `tryUseGeolocationAtStartup`).
 
 // Move player by one cell in the given direction and re-render view
-function movePlayer(dir: "north" | "south" | "east" | "west") {
+function movePlayer(
+  dir: "north" | "south" | "east" | "west",
+  options: { force?: boolean } = {},
+) {
+  // Prevent button-based movement when we're in geolocation mode unless forced
+  if (!options.force && movementMode !== "button") {
+    statusTextDiv.textContent = "Movement disabled in geolocation mode";
+    return;
+  }
   switch (dir) {
     case "north":
       playerCell.i += 1;
@@ -470,8 +495,57 @@ function createCell(i: number, j: number) {
   attachDropHandler(i, j, rect);
 }
 
-// Initial render: draw only cells visible in the current camera view.
-renderVisibleCells();
+// Attempt to use browser geolocation on startup. If successful, snap the
+// returned location to the nearest cell and start the player there. On
+// failure or denial, fall back to the predefined classroom origin.
+function tryUseGeolocationAtStartup() {
+  if (!("geolocation" in navigator)) {
+    // No geolocation support — render at classroom origin
+    const msg = document.createElement("div");
+    msg.textContent = "Geolocation not available — using default start.";
+    msg.className = "status-message";
+    statusMessagesDiv.append(msg);
+    setTimeout(() => msg.remove(), 4000);
+    renderVisibleCells();
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const cell = latLngToCell(lat, lng);
+      playerCell.i = cell.i;
+      playerCell.j = cell.j;
+      const snapped = cellBottomLeftLatLng(playerCell.i, playerCell.j);
+      playerMarker.setLatLng(snapped);
+      playerMarker.addTo(map);
+      map.setView(snapped, GAMEPLAY_ZOOM_LEVEL);
+      const msg = document.createElement("div");
+      msg.textContent = "Using device location as starting position.";
+      msg.className = "status-message";
+      statusMessagesDiv.append(msg);
+      setTimeout(() => msg.remove(), 4000);
+      renderVisibleCells();
+    },
+    (_err) => {
+      const msg = document.createElement("div");
+      msg.textContent = `Geolocation unavailable — using default start.`;
+      msg.className = "status-message";
+      statusMessagesDiv.append(msg);
+      setTimeout(() => msg.remove(), 4000);
+      // leave playerCell as-is (classroom origin) and render
+      const snapped = cellBottomLeftLatLng(playerCell.i, playerCell.j);
+      playerMarker.setLatLng(snapped);
+      playerMarker.addTo(map);
+      renderVisibleCells();
+    },
+    { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
+  );
+}
+
+// Initial startup: prefer geolocation but fall back to classroom origin
+tryUseGeolocationAtStartup();
 
 // Re-render visible cells whenever the map stops moving.
 map.on("moveend", () => {
