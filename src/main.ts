@@ -113,6 +113,94 @@ function showTransientStatus(text: string, ms = 3000) {
   setTimeout(() => msg.remove(), ms);
 }
 
+// LocalStorage session key
+const SESSION_KEY = "cmpm121-session";
+
+// Save current minimal session state to localStorage.
+function saveSession() {
+  try {
+    const changedObj: Record<string, number | null> = {};
+    changedCells.forEach((v, k) => {
+      changedObj[k] = v.value;
+    });
+    const payload: Record<string, unknown> = {
+      movementMode,
+      playerHeldToken: playerHeldToken === null ? null : playerHeldToken,
+      changedCells: changedObj,
+    };
+    if (movementMode === "button") {
+      payload.playerCell = { i: playerCell.i, j: playerCell.j };
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+  } catch (e) {
+    console.error("saveSession error", e);
+    showTransientStatus("Failed to save session", 3000);
+  }
+}
+
+// Load session from localStorage. Returns true if a session was restored.
+function loadSession(): boolean {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw);
+    if (data && typeof data === "object") {
+      if (
+        data.movementMode === "button" || data.movementMode === "geolocation"
+      ) {
+        movementMode = data.movementMode;
+      }
+      try {
+        movementModeToggle.checked = movementMode === "geolocation";
+      } catch (_e) {
+        console.debug("movementModeToggle not yet available");
+      }
+
+      // restore held token
+      playerHeldToken = typeof data.playerHeldToken === "number"
+        ? data.playerHeldToken
+        : null;
+      statusTextDiv.textContent = playerHeldToken === null
+        ? "Holding: none"
+        : `Holding: ${playerHeldToken}`;
+
+      // restore changedCells
+      changedCells.clear();
+      if (data.changedCells && typeof data.changedCells === "object") {
+        for (const k of Object.keys(data.changedCells)) {
+          const val = data.changedCells[k];
+          changedCells.set(k, { value: val === null ? null : val });
+        }
+      }
+
+      // restore playerCell if button mode
+      if (
+        movementMode === "button" && data.playerCell &&
+        typeof data.playerCell.i === "number" &&
+        typeof data.playerCell.j === "number"
+      ) {
+        playerCell.i = data.playerCell.i;
+        playerCell.j = data.playerCell.j;
+        const snapped = cellBottomLeftLatLng(playerCell.i, playerCell.j);
+        playerMarker.setLatLng(snapped);
+        try {
+          playerMarker.addTo(map);
+        } catch (_e) {
+          console.debug("playerMarker.addTo failed");
+        }
+        map.setView(snapped, GAMEPLAY_ZOOM_LEVEL);
+      }
+
+      showTransientStatus("Session loaded", 1500);
+      return true;
+    }
+  } catch (e) {
+    console.error("loadSession error", e);
+    showTransientStatus("Failed to load session", 3000);
+  }
+  return false;
+}
+
 // Wire movement-mode toggle after movementMode and helpers are defined
 movementModeToggle.checked = movementMode === "geolocation";
 movementModeToggle.addEventListener("change", () => {
@@ -126,6 +214,8 @@ movementModeToggle.addEventListener("change", () => {
     movementMode = "button";
     updateMovementButtons();
     stopGeolocationWatch();
+    // persist movement mode and current button-mode cell
+    saveSession();
     showTransientStatus("Switched to button movement", 2000);
     return;
   }
@@ -155,6 +245,8 @@ movementModeToggle.addEventListener("change", () => {
       movementMode = "geolocation";
       updateMovementButtons();
       startGeolocationWatch();
+      // persist movement mode change
+      saveSession();
       showTransientStatus("Switched to geolocation movement", 2000);
       renderVisibleCells();
     },
@@ -168,6 +260,8 @@ movementModeToggle.addEventListener("change", () => {
     { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
   );
 });
+
+// Save/Load buttons removed: the app autosaves and autoloads from localStorage.
 
 // Show a temporary congratulations message when player reaches a target token value
 function congratulateIfReached(value: number) {
@@ -216,9 +310,7 @@ leaflet
 // Layer group that holds all currently visible cells/markers.
 const viewLayer = leaflet.layerGroup().addTo(map);
 
-// Add a marker to represent the player (do NOT add to the map yet —
-// wait for geolocation permission to be resolved so we don't prematurely
-// show the classroom spawn before the user responds to the browser prompt)
+// Add a marker to represent the player
 const playerMarker = leaflet.marker(CLASSROOM_LATLNG);
 playerMarker.bindTooltip("That's you!");
 
@@ -294,6 +386,8 @@ function movePlayer(
   playerMarker.setLatLng(pos);
   // Re-render the visible cells so reach checks and view align with new cell
   renderVisibleCells();
+  // persist session (button-mode stores playerCell)
+  saveSession();
 }
 
 // Wire movement buttons to the movePlayer function
@@ -391,6 +485,8 @@ function spawnTokenAtCell(i: number, j: number) {
       // record that this cell is now empty (player picked it up)
       changedCells.set(key, { value: null });
       console.log(`changedCells[${key}] = null`);
+      // persist session
+      saveSession();
     } else if (playerHeldToken === currentValue) {
       // merge: double the token on the tile
       const newValue = currentValue * 2;
@@ -403,6 +499,8 @@ function spawnTokenAtCell(i: number, j: number) {
       // record the merge
       changedCells.set(key, { value: newValue });
       console.log(`changedCells[${key}] = ${newValue}`);
+      // persist session
+      saveSession();
       // If we reached the target value, show congratulations
       congratulateIfReached(newValue);
       playerHeldToken = null;
@@ -440,6 +538,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
         // record the merge
         changedCells.set(key, { value: newValue });
         console.log(`changedCells[${key}] = ${newValue}`);
+        // persist session
+        saveSession();
         // Congratulate if we produced the target value
         congratulateIfReached(newValue);
         playerHeldToken = null;
@@ -467,6 +567,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
     // record the placement
     changedCells.set(key, { value: placedValue });
     console.log(`changedCells[${key}] = ${placedValue}`);
+    // persist session
+    saveSession();
     // (Do not congratulate on simple placement — only on merges.)
 
     // wire pickup for placed marker (read current tokenMap value on click)
@@ -490,6 +592,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
         // record pickup -> now empty
         changedCells.set(key, { value: null });
         console.log(`changedCells[${key}] = null`);
+        // persist session
+        saveSession();
       } else if (playerHeldToken === current) {
         // merge
         const newValue = current * 2;
@@ -502,6 +606,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
         // record merge
         changedCells.set(key, { value: newValue });
         console.log(`changedCells[${key}] = ${newValue}`);
+        // persist session
+        saveSession();
         // If this merge hit the target, show congrats
         congratulateIfReached(newValue);
         playerHeldToken = null;
@@ -514,6 +620,8 @@ function attachDropHandler(i: number, j: number, rect: leaflet.Rectangle) {
 
     playerHeldToken = null;
     statusTextDiv.textContent = `Placed: ${placedValue} — Holding: none`;
+    // persist session
+    saveSession();
   });
 }
 
@@ -616,6 +724,8 @@ function tryUseGeolocationAtStartup() {
       } catch (e) {
         console.debug("movementModeSelect not yet available", e);
       }
+      // persist movement mode choice
+      saveSession();
       // Start continuous updates
       startGeolocationWatch();
       renderVisibleCells();
@@ -637,14 +747,23 @@ function tryUseGeolocationAtStartup() {
       const { snapped } = snapLatLngToCellBottomLeft(origin.lat, origin.lng);
       playerMarker.setLatLng(snapped);
       playerMarker.addTo(map);
+      // persist fallback to button mode
+      saveSession();
       renderVisibleCells();
     },
     { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
   );
 }
 
-// Initial startup: prefer geolocation but fall back to classroom origin
-tryUseGeolocationAtStartup();
+// Initial startup: try to restore session from localStorage; otherwise prefer geolocation
+const sessionRestored = loadSession();
+if (!sessionRestored || movementMode === "geolocation") {
+  tryUseGeolocationAtStartup();
+} else {
+  // restored a button-mode session: ensure buttons are wired and view reflects restored state
+  updateMovementButtons();
+  renderVisibleCells();
+}
 
 // Geolocation watch controls: when in geolocation movement mode we want to continuously update the player's cell as the device moves.
 let geoWatchId: number | null = null;
@@ -666,6 +785,8 @@ function startGeolocationWatch() {
         // Keep the map centered on the player when moving
         map.setView(snapped, GAMEPLAY_ZOOM_LEVEL);
         renderVisibleCells();
+        // persist movement/mode change (note: saveSession only stores playerCell when in button mode)
+        saveSession();
       }
     },
     (err) => {
