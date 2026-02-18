@@ -1,3 +1,3 @@
-# CMPM 121 D3 Project
+# Street Sum
 
-A game that interacts with the real world like Pokemon Go combined with features from 4096
+Geolocation + 2048 walk around the real world and merge tokens together.
